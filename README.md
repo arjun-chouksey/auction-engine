@@ -2,7 +2,7 @@
 
 A British Auction / reverse-auction RFQ system built as a Go modular monolith with a React frontend and PostgreSQL. The design supports open supplier bidding, deterministic rankings, automatic near-close extensions, a forced closing cap, and an auditable event history.
 
-> Current implementation status: authentication, RFQ creation/list/detail, immutable quote submission, current ranking, and full bid history APIs are implemented. Automatic extensions, activity/SSE endpoints, and the complete frontend workflow remain future work.
+> Current implementation status: authentication, RFQ creation/list/detail, immutable quote submission, current ranking, full bid history, and all three transactional auction-extension policies are implemented. Activity/SSE endpoints and the complete frontend workflow remain future work.
 
 ## Architecture
 

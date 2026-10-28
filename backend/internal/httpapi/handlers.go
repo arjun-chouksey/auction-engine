@@ -276,8 +276,9 @@ func (handlers *handlers) submitBid(response http.ResponseWriter, request *http.
 	}
 	writeJSON(response, status, map[string]any{
 		"bid": toBidResponse(result.Bid), "current_rank": result.CurrentRank,
-		"extended": false, "extension_reason": nil, "previous_close_at": nil,
-		"current_close_at": result.CurrentCloseAt.UTC(), "server_time": result.ServerTime.UTC(),
+		"extended": result.Extended, "extension_reason": result.ExtensionReason,
+		"previous_close_at": result.PreviousCloseAt,
+		"current_close_at":  result.CurrentCloseAt.UTC(), "server_time": result.ServerTime.UTC(),
 		"idempotent_replay": result.IdempotentReplay,
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/arjunchouksey/british-auction-rfq/backend/internal/auction"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,6 +37,9 @@ type SubmitBidResult struct {
 	CurrentCloseAt   time.Time
 	ServerTime       time.Time
 	IdempotentReplay bool
+	Extended         bool
+	ExtensionReason  *domain.TriggerType
+	PreviousCloseAt  *time.Time
 }
 
 type BidPage struct {
@@ -57,11 +61,13 @@ func (repository *Bids) Submit(ctx context.Context, params SubmitBidParams) (Sub
 	}
 	defer tx.Rollback(ctx)
 
-	var bidStart, currentClose, forcedClose, serviceDate time.Time
+	var rfq domain.RFQ
 	if err := tx.QueryRow(ctx, `
-		SELECT bid_start_at, current_close_at, forced_close_at, service_date
+		SELECT id, service_date, bid_start_at, current_close_at, forced_close_at,
+		       trigger_window_minutes, extension_minutes, trigger_type
 		FROM rfqs WHERE id = $1 FOR UPDATE
-	`, params.RFQID).Scan(&bidStart, &currentClose, &forcedClose, &serviceDate); err != nil {
+	`, params.RFQID).Scan(&rfq.ID, &rfq.ServiceDate, &rfq.BidStartAt, &rfq.CurrentCloseAt,
+		&rfq.ForcedCloseAt, &rfq.TriggerWindowMinutes, &rfq.ExtensionMinutes, &rfq.TriggerType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return SubmitBidResult{}, ErrNotFound
 		}
@@ -80,7 +86,7 @@ func (repository *Bids) Submit(ctx context.Context, params SubmitBidParams) (Sub
 		if err := tx.Commit(ctx); err != nil {
 			return SubmitBidResult{}, fmt.Errorf("commit bid replay: %w", err)
 		}
-		return SubmitBidResult{Bid: stored, CurrentRank: rank, CurrentCloseAt: currentClose, ServerTime: now, IdempotentReplay: true}, nil
+		return SubmitBidResult{Bid: stored, CurrentRank: rank, CurrentCloseAt: rfq.CurrentCloseAt, ServerTime: now, IdempotentReplay: true}, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return SubmitBidResult{}, fmt.Errorf("find idempotent bid: %w", err)
@@ -90,13 +96,13 @@ func (repository *Bids) Submit(ctx context.Context, params SubmitBidParams) (Sub
 	if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
 		return SubmitBidResult{}, fmt.Errorf("read authoritative bid time: %w", err)
 	}
-	if now.Before(bidStart) {
+	if now.Before(rfq.BidStartAt) {
 		return SubmitBidResult{}, ErrAuctionNotStarted
 	}
-	if !now.Before(currentClose) || !now.Before(forcedClose) {
+	if !now.Before(rfq.CurrentCloseAt) || !now.Before(rfq.ForcedCloseAt) {
 		return SubmitBidResult{}, ErrAuctionNotActive
 	}
-	if params.QuoteValidUntil.Before(serviceDate) {
+	if params.QuoteValidUntil.Before(rfq.ServiceDate) {
 		return SubmitBidResult{}, ErrQuoteValidity
 	}
 
@@ -116,6 +122,10 @@ func (repository *Bids) Submit(ctx context.Context, params SubmitBidParams) (Sub
 	}
 	if hasLatest && latestTotal <= total {
 		return SubmitBidResult{}, ErrBidNotImproved
+	}
+	before, err := rankingInTransaction(ctx, tx, params.RFQID)
+	if err != nil {
+		return SubmitBidResult{}, err
 	}
 
 	var bid domain.Bid
@@ -139,14 +149,46 @@ func (repository *Bids) Submit(ctx context.Context, params SubmitBidParams) (Sub
 	`, params.RFQID, bid.ID, params.SupplierID, bid.TotalMinor, now); err != nil {
 		return SubmitBidResult{}, fmt.Errorf("insert bid accepted event: %w", err)
 	}
-	rank, err := currentRank(ctx, tx, params.RFQID, params.SupplierID)
+	after, err := rankingInTransaction(ctx, tx, params.RFQID)
 	if err != nil {
 		return SubmitBidResult{}, err
+	}
+	rank := rankForSupplier(after, params.SupplierID)
+	closeUpdate := auction.ComputeExtension(now, rfq, before, after)
+	var reason *domain.TriggerType
+	var previousClose *time.Time
+	if closeUpdate.Extended {
+		if _, err := tx.Exec(ctx, `
+			UPDATE rfqs SET current_close_at = $2, updated_at = $3 WHERE id = $1
+		`, params.RFQID, closeUpdate.NewClose, now); err != nil {
+			return SubmitBidResult{}, fmt.Errorf("update RFQ close: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO auction_events (rfq_id, bid_id, actor_id, event_type, event_data, created_at)
+			VALUES ($1, $2, $3, 'AUCTION_EXTENDED', jsonb_build_object(
+				'trigger_type', $4::text, 'old_close_at', $5::timestamptz,
+				'new_close_at', $6::timestamptz, 'trigger_window_minutes', $7::integer,
+				'extension_minutes', $8::integer, 'before_ranking', $9::text[],
+				'after_ranking', $10::text[]
+			), $11)
+		`, params.RFQID, bid.ID, params.SupplierID, closeUpdate.Reason,
+			closeUpdate.OldClose, closeUpdate.NewClose, rfq.TriggerWindowMinutes,
+			rfq.ExtensionMinutes, supplierIDs(before), supplierIDs(after), now); err != nil {
+			return SubmitBidResult{}, fmt.Errorf("insert auction extended event: %w", err)
+		}
+		rfq.CurrentCloseAt = closeUpdate.NewClose
+		reasonValue := closeUpdate.Reason
+		reason = &reasonValue
+		previousValue := closeUpdate.OldClose
+		previousClose = &previousValue
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return SubmitBidResult{}, fmt.Errorf("commit bid: %w", err)
 	}
-	return SubmitBidResult{Bid: bid, CurrentRank: rank, CurrentCloseAt: currentClose, ServerTime: now}, nil
+	return SubmitBidResult{
+		Bid: bid, CurrentRank: rank, CurrentCloseAt: rfq.CurrentCloseAt, ServerTime: now,
+		Extended: closeUpdate.Extended, ExtensionReason: reason, PreviousCloseAt: previousClose,
+	}, nil
 }
 
 var (
@@ -274,6 +316,44 @@ func currentRank(ctx context.Context, tx pgx.Tx, rfqID, supplierID string) (int,
 		return 0, fmt.Errorf("read current rank: %w", err)
 	}
 	return rank, nil
+}
+
+func rankingInTransaction(ctx context.Context, tx pgx.Tx, rfqID string) ([]domain.RankedBid, error) {
+	rows, err := tx.Query(ctx, latestRankingSQL, rfqID)
+	if err != nil {
+		return nil, fmt.Errorf("query transactional ranking: %w", err)
+	}
+	defer rows.Close()
+	items := make([]domain.RankedBid, 0)
+	for rows.Next() {
+		var item domain.RankedBid
+		destinations := append([]any{&item.Rank}, bidDestinations(&item.Bid)...)
+		if err := rows.Scan(destinations...); err != nil {
+			return nil, fmt.Errorf("scan transactional ranking: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate transactional ranking: %w", err)
+	}
+	return items, nil
+}
+
+func rankForSupplier(ranking []domain.RankedBid, supplierID string) int {
+	for _, item := range ranking {
+		if item.Bid.SupplierID == supplierID {
+			return item.Rank
+		}
+	}
+	return 0
+}
+
+func supplierIDs(ranking []domain.RankedBid) []string {
+	ids := make([]string, len(ranking))
+	for index, item := range ranking {
+		ids[index] = item.Bid.SupplierID
+	}
+	return ids
 }
 
 func samePayload(bid domain.Bid, params SubmitBidParams) bool {
