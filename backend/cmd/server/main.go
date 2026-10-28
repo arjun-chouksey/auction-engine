@@ -15,6 +15,7 @@ import (
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/config"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/database"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/httpapi"
+	"github.com/arjunchouksey/british-auction-rfq/backend/internal/realtime"
 	postgresrepository "github.com/arjunchouksey/british-auction-rfq/backend/internal/repository/postgres"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/service"
 )
@@ -51,17 +52,22 @@ func main() {
 	users := postgresrepository.NewUsers(pool)
 	rfqs := postgresrepository.NewRFQs(pool)
 	bids := postgresrepository.NewBids(pool)
+	events := postgresrepository.NewEvents(pool)
+	hub := realtime.NewHub(4)
 	authService := service.NewAuth(users, tokens)
 	rfqService := service.NewRFQs(rfqs)
-	bidService := service.NewBids(bids)
+	bidService := service.NewBids(bids, hub)
+	eventService := service.NewEvents(events)
 
 	server := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewRouter(httpapi.Dependencies{
-			AuthService: authService,
-			RFQService:  rfqService,
-			BidService:  bidService,
-			Tokens:      tokens,
+			AuthService:  authService,
+			RFQService:   rfqService,
+			BidService:   bidService,
+			EventService: eventService,
+			Hub:          hub,
+			Tokens:       tokens,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,

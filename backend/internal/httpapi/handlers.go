@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/domain"
+	"github.com/arjunchouksey/british-auction-rfq/backend/internal/realtime"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/service"
 	"github.com/go-chi/chi/v5"
 )
@@ -20,13 +21,15 @@ const maxRequestBodyBytes = 1 << 20
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 
 type handlers struct {
-	auth *service.Auth
-	rfqs *service.RFQs
-	bids *service.Bids
+	auth   *service.Auth
+	rfqs   *service.RFQs
+	bids   *service.Bids
+	events *service.Events
+	hub    *realtime.Hub
 }
 
-func newHandlers(authService *service.Auth, rfqService *service.RFQs, bidService *service.Bids) *handlers {
-	return &handlers{auth: authService, rfqs: rfqService, bids: bidService}
+func newHandlers(authService *service.Auth, rfqService *service.RFQs, bidService *service.Bids, eventService *service.Events, hub *realtime.Hub) *handlers {
+	return &handlers{auth: authService, rfqs: rfqService, bids: bidService, events: eventService, hub: hub}
 }
 
 type loginRequest struct {
@@ -339,6 +342,107 @@ func toBidResponse(bid domain.Bid) bidResponse {
 		OriginMinor: strconv.FormatInt(bid.OriginMinor, 10), DestinationMinor: strconv.FormatInt(bid.DestinationMinor, 10),
 		TotalMinor: strconv.FormatInt(bid.TotalMinor, 10), TransitTimeHours: bid.TransitTimeHours,
 		QuoteValidUntil: bid.QuoteValidUntil.Format(time.DateOnly), SubmittedAt: bid.SubmittedAt.UTC(),
+	}
+}
+
+type eventResponse struct {
+	ID        string           `json:"id"`
+	RFQID     string           `json:"rfq_id"`
+	BidID     *string          `json:"bid_id"`
+	ActorID   *string          `json:"actor_id"`
+	Type      domain.EventType `json:"event_type"`
+	Data      json.RawMessage  `json:"event_data"`
+	CreatedAt time.Time        `json:"created_at"`
+}
+
+func (handlers *handlers) listEvents(response http.ResponseWriter, request *http.Request) {
+	rfqID := chi.URLParam(request, "rfq_id")
+	if !uuidPattern.MatchString(rfqID) {
+		writeError(response, http.StatusNotFound, "RFQ_NOT_FOUND", "RFQ not found")
+		return
+	}
+	page, err := parsePositiveInt(request.URL.Query().Get("page"), 1)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "page must be a positive integer")
+		return
+	}
+	pageSize, err := parsePositiveInt(request.URL.Query().Get("page_size"), 30)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "page_size must be a positive integer")
+		return
+	}
+	result, err := handlers.events.List(request.Context(), rfqID, page, pageSize)
+	if err != nil {
+		handleServiceError(response, err)
+		return
+	}
+	items := make([]eventResponse, 0, len(result.Items))
+	for _, event := range result.Items {
+		var bidID *string
+		if event.BidID != nil {
+			value := strconv.FormatInt(*event.BidID, 10)
+			bidID = &value
+		}
+		items = append(items, eventResponse{
+			ID: strconv.FormatInt(event.ID, 10), RFQID: event.RFQID, BidID: bidID,
+			ActorID: event.ActorID, Type: event.Type, Data: event.Data, CreatedAt: event.CreatedAt.UTC(),
+		})
+	}
+	writeJSON(response, http.StatusOK, map[string]any{
+		"items": items, "page": page, "page_size": pageSize,
+		"total_items": result.TotalItems, "server_time": result.ServerTime.UTC(),
+	})
+}
+
+func (handlers *handlers) streamRFQ(response http.ResponseWriter, request *http.Request) {
+	rfqID := chi.URLParam(request, "rfq_id")
+	if !uuidPattern.MatchString(rfqID) {
+		writeError(response, http.StatusNotFound, "RFQ_NOT_FOUND", "RFQ not found")
+		return
+	}
+	if _, err := handlers.rfqs.Get(request.Context(), rfqID); err != nil {
+		handleServiceError(response, err)
+		return
+	}
+	flusher, ok := response.(http.Flusher)
+	if !ok {
+		writeError(response, http.StatusInternalServerError, "INTERNAL_ERROR", "Streaming is not supported")
+		return
+	}
+	response.Header().Set("Content-Type", "text/event-stream")
+	response.Header().Set("Cache-Control", "no-cache")
+	response.Header().Set("Connection", "keep-alive")
+	response.Header().Set("X-Accel-Buffering", "no")
+	messages, unsubscribe := handlers.hub.Subscribe(rfqID)
+	defer unsubscribe()
+	if _, err := io.WriteString(response, ": connected\n\n"); err != nil {
+		return
+	}
+	flusher.Flush()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-request.Context().Done():
+			return
+		case message, open := <-messages:
+			if !open {
+				return
+			}
+			payload, err := json.Marshal(message)
+			if err != nil {
+				return
+			}
+			if _, err := io.WriteString(response, "event: rfq_changed\ndata: "+string(payload)+"\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-heartbeat.C:
+			if _, err := io.WriteString(response, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
 	}
 }
 

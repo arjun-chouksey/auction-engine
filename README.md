@@ -2,7 +2,7 @@
 
 A British Auction / reverse-auction RFQ system built as a Go modular monolith with a React frontend and PostgreSQL. The design supports open supplier bidding, deterministic rankings, automatic near-close extensions, a forced closing cap, and an auditable event history.
 
-> Current implementation status: authentication, RFQ creation/list/detail, immutable quote submission, current ranking, full bid history, and all three transactional auction-extension policies are implemented. Activity/SSE endpoints and the complete frontend workflow remain future work.
+> Current implementation status: authentication, RFQ creation/list/detail, immutable quote submission, current ranking, full bid and activity history, all three transactional extension policies, and authenticated SSE invalidation are implemented. The complete frontend workflow remains future work.
 
 ## Architecture
 
@@ -145,6 +145,8 @@ All application endpoints use the `/api/v1` prefix. Authentication uses a one-ho
 | `POST` | `/api/v1/rfqs/{id}/bids` | Supplier |
 | `GET` | `/api/v1/rfqs/{id}/ranking` | Authenticated |
 | `GET` | `/api/v1/rfqs/{id}/bids` | Authenticated |
+| `GET` | `/api/v1/rfqs/{id}/events` | Authenticated |
+| `GET` | `/api/v1/rfqs/{id}/stream` | Authenticated SSE |
 
 Login using a local demo account:
 
@@ -167,6 +169,8 @@ curl -sS -X POST http://localhost:8080/api/v1/rfqs/<rfq-id>/bids \
 ```
 
 Money and bid IDs are decimal strings in JSON. Replaying the same key with the same canonical quote returns the original bid without another insert or event; reusing it with a changed quote returns `IDEMPOTENCY_KEY_REUSED`. Bid history defaults to price order and accepts `sort=newest`.
+
+The event endpoint returns immutable activity newest first. The stream endpoint uses fetch-based SSE with the same bearer header and emits best-effort `rfq_changed` signals; clients must refetch canonical RFQ, ranking, bid, and event data after signals or reconnects.
 
 ## Core design constraints
 

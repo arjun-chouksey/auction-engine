@@ -22,7 +22,14 @@ type BidRepository interface {
 	List(context.Context, string, string, int, int) (postgresrepository.BidPage, error)
 }
 
-type Bids struct{ repository BidRepository }
+type ChangePublisher interface {
+	Publish(rfqID, reason string)
+}
+
+type Bids struct {
+	repository BidRepository
+	publisher  ChangePublisher
+}
 
 type SubmitBidInput struct {
 	RFQID            string
@@ -35,7 +42,13 @@ type SubmitBidInput struct {
 	QuoteValidUntil  time.Time
 }
 
-func NewBids(repository BidRepository) *Bids { return &Bids{repository: repository} }
+func NewBids(repository BidRepository, publishers ...ChangePublisher) *Bids {
+	service := &Bids{repository: repository}
+	if len(publishers) > 0 {
+		service.publisher = publishers[0]
+	}
+	return service
+}
 
 func (service *Bids) Submit(ctx context.Context, identity auth.Identity, input SubmitBidInput) (postgresrepository.SubmitBidResult, error) {
 	if identity.Role != domain.RoleSupplier {
@@ -92,6 +105,9 @@ func (service *Bids) Submit(ctx context.Context, identity auth.Identity, input S
 		default:
 			return postgresrepository.SubmitBidResult{}, fmt.Errorf("submit bid: %w", err)
 		}
+	}
+	if !result.IdempotentReplay && service.publisher != nil {
+		service.publisher.Publish(input.RFQID, string(domain.EventBidAccepted))
 	}
 	return result, nil
 }

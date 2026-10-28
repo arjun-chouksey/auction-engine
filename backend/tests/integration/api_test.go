@@ -14,6 +14,7 @@ import (
 
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/auth"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/httpapi"
+	"github.com/arjunchouksey/british-auction-rfq/backend/internal/realtime"
 	postgresrepository "github.com/arjunchouksey/british-auction-rfq/backend/internal/repository/postgres"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/service"
 )
@@ -136,6 +137,11 @@ func TestAuthenticationAndRFQAPI(t *testing.T) {
 }
 
 func newTestHandler(t *testing.T) http.Handler {
+	handler, _ := newTestApplication(t)
+	return handler
+}
+
+func newTestApplication(t *testing.T) (http.Handler, *realtime.Hub) {
 	t.Helper()
 	tokens, err := auth.NewTokenManager(testJWTSecret, time.Hour)
 	if err != nil {
@@ -144,12 +150,16 @@ func newTestHandler(t *testing.T) http.Handler {
 	users := postgresrepository.NewUsers(testPool)
 	rfqs := postgresrepository.NewRFQs(testPool)
 	bids := postgresrepository.NewBids(testPool)
+	events := postgresrepository.NewEvents(testPool)
+	hub := realtime.NewHub(4)
 	return httpapi.NewRouter(httpapi.Dependencies{
-		AuthService: service.NewAuth(users, tokens),
-		RFQService:  service.NewRFQs(rfqs),
-		BidService:  service.NewBids(bids),
-		Tokens:      tokens,
-	})
+		AuthService:  service.NewAuth(users, tokens),
+		RFQService:   service.NewRFQs(rfqs),
+		BidService:   service.NewBids(bids, hub),
+		EventService: service.NewEvents(events),
+		Hub:          hub,
+		Tokens:       tokens,
+	}), hub
 }
 
 func login(t *testing.T, handler http.Handler, email string) string {
