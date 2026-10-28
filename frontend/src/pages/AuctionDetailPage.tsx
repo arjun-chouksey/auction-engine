@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, Loading, Pagination, StatusBadge } from "../com
 import { api, apiBase, ApiError } from "../lib/api";
 import { countdown, formatDateTime } from "../lib/date";
 import { decimalToMinor, formatMinor, sumMinor } from "../lib/money";
+import { consumeRFQStream } from "../lib/sse";
 import type { AuctionEvent, Bid, Page, RankedBid, RFQ } from "../lib/types";
 
 interface DetailData { rfq: RFQ; ranking: RankedBid[]; bids: Page<Bid>; events: Page<AuctionEvent>; receivedAt: number }
@@ -41,9 +42,9 @@ export function AuctionDetailPage() {
     const connect = async () => {
       try {
         const response = await fetch(`${apiBase()}/api/v1/rfqs/${id}/stream`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
-        if (!response.ok || !response.body) throw new Error("stream unavailable"); retry = 1000; void load(true);
-        const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
-        while (!controller.signal.aborted) { const result = await reader.read(); if (result.done) break; buffer += decoder.decode(result.value, { stream: true }); let boundary: number; while ((boundary = buffer.indexOf("\n\n")) >= 0) { const message = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2); if (message.includes("event: rfq_changed")) void load(true); } }
+        retry = 1000; void load(true);
+        await consumeRFQStream(response, controller.signal, () => void load(true));
+        if (!controller.signal.aborted) throw new Error("stream ended");
       } catch { if (!controller.signal.aborted) { timeout = window.setTimeout(connect, retry); retry = Math.min(retry * 2, 15000); } }
     }; void connect(); return () => { controller.abort(); clearTimeout(timeout); };
   }, [id, load, token]);

@@ -2,7 +2,7 @@
 
 A British Auction / reverse-auction RFQ system built as a Go modular monolith with a React frontend and PostgreSQL. The design supports open supplier bidding, deterministic rankings, automatic near-close extensions, a forced closing cap, and an auditable event history.
 
-> Current implementation status: authentication, RFQ creation/list/detail, immutable quote submission, current ranking, full bid and activity history, all three transactional extension policies, and authenticated SSE invalidation are implemented. The complete frontend workflow remains future work.
+> Current implementation status: the complete buyer and supplier browser workflow is implemented, including authentication, RFQ creation/list/detail, exact-money quote entry, current ranking, full bid and activity history, all three transactional extension policies, authenticated SSE invalidation, and polling/focus recovery.
 
 ## Architecture
 
@@ -17,6 +17,7 @@ The submission design documents are:
 
 - [High-level and low-level architecture](docs/02_ARCHITECTURE.md)
 - [Database schema design](docs/03_DATABASE_SCHEMA.md)
+- [Observed verification results](TEST_RESULTS.md)
 
 ## Repository structure
 
@@ -185,3 +186,12 @@ The event endpoint returns immutable activity newest first. The stream endpoint 
 ## Scope
 
 The planned submission covers the HLD, schema design, backend, and frontend for the RFQ auction workflow. Production deployment, payments, supplier awards, external identity providers, distributed messaging, and Kubernetes are outside the project scope.
+
+## Known limitations
+
+- The MVP supports one API replica. PostgreSQL preserves auction correctness across transactions, but the in-process SSE broadcaster does not fan out between replicas.
+- SSE is a best-effort refresh signal. The frontend reconnects and also refreshes on focus and every 15 seconds; it does not provide persistent event replay.
+- Demo authentication uses seeded local accounts and one-hour bearer tokens held only in browser memory. There is no signup, refresh-token, password-reset, or external identity-provider flow.
+- INR is the only currency exposed by the browser UI. The API stores all monetary values as integer minor units and returns decimal strings.
+- There is no background closure worker. Auction status is derived from authoritative database time whenever state is requested or a bid is attempted.
+- The test suite verifies transaction races and edge semantics, but it is not a production load, penetration, accessibility-certification, or multi-region test.

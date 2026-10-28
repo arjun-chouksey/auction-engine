@@ -13,7 +13,7 @@ backend-test:
 	docker build --target test -t british-auction-backend-test ./backend
 
 backend-integration-test:
-	docker compose run --rm integration-test
+	docker compose run --rm --build integration-test
 
 backend-lint:
 	docker run --rm -v "$(CURDIR)/backend:/app" -w /app golang:1.27.3 sh -c 'test -z "$$(gofmt -l .)" && go vet ./...'
@@ -33,7 +33,7 @@ frontend-test:
 frontend-build:
 	cd frontend && npm run build
 
-test: backend-test frontend-lint frontend-test frontend-build
+test: backend-lint backend-test backend-integration-test frontend-lint frontend-test frontend-build
 
 migrate-up:
 	docker compose run --rm migrate -path=/migrations -database "$${DATABASE_URL:-postgres://auction:auction_local_only@db:5432/british_auction?sslmode=disable}" up

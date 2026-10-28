@@ -121,6 +121,11 @@ func TestAuthenticationAndRFQAPI(t *testing.T) {
 		assertStatus(t, response, http.StatusOK)
 	})
 
+	t.Run("oversized page is rejected", func(t *testing.T) {
+		response := performRequest(t, handler, http.MethodGet, "/api/v1/rfqs?page_size=101", buyerToken, nil)
+		assertErrorCode(t, response, http.StatusBadRequest, "INVALID_REQUEST")
+	})
+
 	t.Run("creation writes one audit event", func(t *testing.T) {
 		var eventCount int
 		var eventType string

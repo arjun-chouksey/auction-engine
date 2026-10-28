@@ -97,6 +97,7 @@ func TestBidSubmissionRankingAndHistory(t *testing.T) {
 	invalidCases := []map[string]any{
 		validBidRequest("-1", "1", "1"),
 		validBidRequest("0", "0", "0"),
+		validBidRequest("9223372036854775807", "1", "0"),
 		{"carrier_name": "Carrier", "freight_minor": "1", "origin_minor": "0", "destination_minor": "0", "transit_time_hours": 0, "quote_valid_until": "2035-01-01"},
 		{"carrier_name": "", "freight_minor": "1", "origin_minor": "0", "destination_minor": "0", "transit_time_hours": 1, "quote_valid_until": "2035-01-01"},
 		{"carrier_name": "Carrier", "freight_minor": "1", "origin_minor": "0", "destination_minor": "0", "transit_time_hours": 1, "quote_valid_until": "2020-01-01"},

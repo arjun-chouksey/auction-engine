@@ -17,6 +17,7 @@ import (
 )
 
 const maxRequestBodyBytes = 1 << 20
+const maxPageSize = 100
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 
@@ -126,8 +127,8 @@ func (handlers *handlers) listRFQs(response http.ResponseWriter, request *http.R
 		return
 	}
 	pageSize, err := parsePositiveInt(request.URL.Query().Get("page_size"), 20)
-	if err != nil {
-		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "page_size must be a positive integer")
+	if err != nil || pageSize > maxPageSize {
+		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "page_size must be between 1 and 100")
 		return
 	}
 	var status *domain.RFQStatus
@@ -316,8 +317,8 @@ func (handlers *handlers) listBids(response http.ResponseWriter, request *http.R
 		return
 	}
 	pageSize, err := parsePositiveInt(request.URL.Query().Get("page_size"), 20)
-	if err != nil {
-		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "page_size must be a positive integer")
+	if err != nil || pageSize > maxPageSize {
+		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "page_size must be between 1 and 100")
 		return
 	}
 	result, err := handlers.bids.List(request.Context(), rfqID, request.URL.Query().Get("sort"), page, pageSize)
@@ -367,8 +368,8 @@ func (handlers *handlers) listEvents(response http.ResponseWriter, request *http
 		return
 	}
 	pageSize, err := parsePositiveInt(request.URL.Query().Get("page_size"), 30)
-	if err != nil {
-		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "page_size must be a positive integer")
+	if err != nil || pageSize > maxPageSize {
+		writeError(response, http.StatusBadRequest, "INVALID_REQUEST", "page_size must be between 1 and 100")
 		return
 	}
 	result, err := handlers.events.List(request.Context(), rfqID, page, pageSize)
