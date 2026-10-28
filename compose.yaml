@@ -14,6 +14,7 @@ services:
       retries: 15
     volumes:
       - postgres_data:/var/lib/postgresql
+      - ./backend/testdata/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
 
   api:
     build:
@@ -21,9 +22,10 @@ services:
     environment:
       APP_PORT: ${APP_PORT:-8080}
       DATABASE_URL: ${DATABASE_URL:-postgres://auction:auction_local_only@db:5432/british_auction?sslmode=disable}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-AuctionDemo2026!}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
     ports:
-      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
+      - "${API_HOST_PORT:-8080}:${APP_PORT:-8080}"
     depends_on:
       db:
         condition: service_healthy
@@ -45,10 +47,21 @@ services:
         condition: service_healthy
 
   migrate:
-    image: migrate/migrate:v4.19.1
+    image: migrate/migrate:v4.20.1
     profiles: ["tools"]
     volumes:
       - ./backend/migrations:/migrations:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  integration-test:
+    build:
+      context: ./backend
+      target: integration-test
+    profiles: ["tools"]
+    environment:
+      DATABASE_TEST_URL: ${DATABASE_TEST_URL_COMPOSE:-postgres://auction:auction_local_only@db:5432/british_auction_test?sslmode=disable}
     depends_on:
       db:
         condition: service_healthy

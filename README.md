@@ -2,7 +2,7 @@
 
 A British Auction / reverse-auction RFQ system built as a Go modular monolith with a React frontend and PostgreSQL. The design supports open supplier bidding, deterministic rankings, automatic near-close extensions, a forced closing cap, and an auditable event history.
 
-> Current implementation status: the project bootstrap and local development harness are complete. The repository currently provides the runnable API/UI skeleton, health endpoint, PostgreSQL service, migration runner wiring, and baseline tests. Auction business features described in the design documents are not implemented yet.
+> Current implementation status: the project bootstrap and database foundation are complete. The repository provides the runnable API/UI skeleton, health endpoint, PostgreSQL schema migrations, pgx connection pool, development seed accounts, and database integration tests. Auction HTTP and business features described in the design documents are not implemented yet.
 
 ## Architecture
 
@@ -66,6 +66,30 @@ Stop the stack without removing database data:
 docker compose down
 ```
 
+If port 8080 is already in use, map the API to another host port without changing its container port:
+
+```bash
+API_HOST_PORT=18082 docker compose up --build
+```
+
+### Schema and demo accounts
+
+Apply all pending migrations and seed the local development users:
+
+```bash
+make migrate-up
+make seed
+```
+
+The seed is idempotent. These accounts are for local development only and all use the password configured by `DEMO_PASSWORD` (default: `AuctionDemo2026!`):
+
+| Role | Email |
+|---|---|
+| Buyer | `buyer@example.test` |
+| Supplier | `supplier.a@example.test` |
+| Supplier | `supplier.b@example.test` |
+| Supplier | `supplier.c@example.test` |
+
 ## Verification
 
 Run the complete available check suite:
@@ -79,6 +103,7 @@ Or run checks separately:
 ```bash
 make backend-lint
 make backend-test
+make backend-integration-test
 make frontend-install
 make frontend-lint
 make frontend-test
@@ -89,7 +114,7 @@ Frontend dependencies are pinned in `package-lock.json`; Go dependencies are rec
 
 ## Database migrations
 
-The migration runner is wired, while schema migrations are intentionally not present in the current bootstrap. Once versioned `*.up.sql` and `*.down.sql` files exist under `backend/migrations`, apply them with:
+Versioned up/down migrations live under `backend/migrations`. Apply them with:
 
 ```bash
 make migrate-up

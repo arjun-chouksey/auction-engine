@@ -7,7 +7,8 @@ import (
 )
 
 type Config struct {
-	Port string
+	Port        string
+	DatabaseURL string
 }
 
 func Load() (Config, error) {
@@ -18,5 +19,9 @@ func Load() (Config, error) {
 	if strings.ContainsAny(port, ":/ ") {
 		return Config{}, fmt.Errorf("APP_PORT must be a port number")
 	}
-	return Config{Port: port}, nil
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	return Config{Port: port, DatabaseURL: databaseURL}, nil
 }

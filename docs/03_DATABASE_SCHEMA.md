@@ -1,6 +1,6 @@
 # 03 — PostgreSQL schema and data-access design
 
-**This is the approved DDL specification**, not yet an applied migration. Implement it as executable versioned migration files using PostgreSQL 16+.
+**This is the approved DDL specification.** It is implemented by `backend/migrations/000001_initial_schema.up.sql` with a matching down migration and targets PostgreSQL 16+.
 
 ## ER diagram
 
@@ -59,7 +59,7 @@ erDiagram
     }
 ```
 
-## Proposed PostgreSQL DDL (to translate into numbered migration)
+## Implemented PostgreSQL DDL
 
 ```sql
 CREATE TABLE users (

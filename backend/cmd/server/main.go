@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/config"
+	"github.com/arjunchouksey/british-auction-rfq/backend/internal/database"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/httpapi"
 )
 
@@ -32,6 +33,13 @@ func main() {
 		slog.Error("load configuration", "error", err)
 		os.Exit(1)
 	}
+
+	pool, err := database.Open(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("connect to database", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
