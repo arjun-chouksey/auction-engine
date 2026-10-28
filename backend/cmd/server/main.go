@@ -11,9 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/arjunchouksey/british-auction-rfq/backend/internal/auth"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/config"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/database"
 	"github.com/arjunchouksey/british-auction-rfq/backend/internal/httpapi"
+	postgresrepository "github.com/arjunchouksey/british-auction-rfq/backend/internal/repository/postgres"
+	"github.com/arjunchouksey/british-auction-rfq/backend/internal/service"
 )
 
 func main() {
@@ -40,10 +43,26 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	tokens, err := auth.NewTokenManager(cfg.JWTSecret, time.Hour)
+	if err != nil {
+		slog.Error("configure token manager", "error", err)
+		os.Exit(1)
+	}
+	users := postgresrepository.NewUsers(pool)
+	rfqs := postgresrepository.NewRFQs(pool)
+	bids := postgresrepository.NewBids(pool)
+	authService := service.NewAuth(users, tokens)
+	rfqService := service.NewRFQs(rfqs)
+	bidService := service.NewBids(bids)
 
 	server := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           httpapi.NewRouter(),
+		Addr: ":" + cfg.Port,
+		Handler: httpapi.NewRouter(httpapi.Dependencies{
+			AuthService: authService,
+			RFQService:  rfqService,
+			BidService:  bidService,
+			Tokens:      tokens,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}

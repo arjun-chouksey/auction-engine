@@ -23,6 +23,7 @@ services:
       APP_PORT: ${APP_PORT:-8080}
       DATABASE_URL: ${DATABASE_URL:-postgres://auction:auction_local_only@db:5432/british_auction?sslmode=disable}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-AuctionDemo2026!}
+      JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-random-local-development-secret}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
     ports:
       - "${API_HOST_PORT:-8080}:${APP_PORT:-8080}"

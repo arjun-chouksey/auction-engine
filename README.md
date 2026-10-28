@@ -2,12 +2,12 @@
 
 A British Auction / reverse-auction RFQ system built as a Go modular monolith with a React frontend and PostgreSQL. The design supports open supplier bidding, deterministic rankings, automatic near-close extensions, a forced closing cap, and an auditable event history.
 
-> Current implementation status: the project bootstrap and database foundation are complete. The repository provides the runnable API/UI skeleton, health endpoint, PostgreSQL schema migrations, pgx connection pool, development seed accounts, and database integration tests. Auction HTTP and business features described in the design documents are not implemented yet.
+> Current implementation status: authentication, RFQ creation/list/detail, immutable quote submission, current ranking, and full bid history APIs are implemented. Automatic extensions, activity/SSE endpoints, and the complete frontend workflow remain future work.
 
 ## Architecture
 
 - **Backend:** Go, `net/http`, Chi
-- **Database:** PostgreSQL with pgx planned for transactional data access
+- **Database:** PostgreSQL with pgx/pgxpool transactional data access
 - **Frontend:** React, TypeScript, Vite
 - **Local runtime:** Docker Compose
 - **Live updates:** Server-Sent Events as best-effort invalidation; PostgreSQL remains authoritative
@@ -23,8 +23,12 @@ The submission design documents are:
 ```text
 backend/
   cmd/server/             Go composition root
+  internal/auth/          JWT issue and validation
   internal/config/        Environment configuration
+  internal/domain/        Deterministic auction domain logic
   internal/httpapi/       Chi router and HTTP handlers
+  internal/repository/    PostgreSQL repositories and transactions
+  internal/service/       Application validation and authorization
   migrations/             Versioned SQL migration location
 frontend/
   src/app/                React router shell and pages
@@ -125,6 +129,44 @@ Roll back one migration with:
 ```bash
 make migrate-down
 ```
+
+## HTTP API
+
+All application endpoints use the `/api/v1` prefix. Authentication uses a one-hour HS256 bearer token. The server validates the signing algorithm, issuer, signature, and expiry; tokens are not logged.
+
+| Method | Path | Access |
+|---|---|---|
+| `GET` | `/healthz` | Public |
+| `POST` | `/api/v1/auth/login` | Public |
+| `GET` | `/api/v1/auth/me` | Authenticated |
+| `POST` | `/api/v1/rfqs` | Buyer |
+| `GET` | `/api/v1/rfqs` | Authenticated |
+| `GET` | `/api/v1/rfqs/{id}` | Authenticated |
+| `POST` | `/api/v1/rfqs/{id}/bids` | Supplier |
+| `GET` | `/api/v1/rfqs/{id}/ranking` | Authenticated |
+| `GET` | `/api/v1/rfqs/{id}/bids` | Authenticated |
+
+Login using a local demo account:
+
+```bash
+curl -sS http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"buyer@example.test","password":"AuctionDemo2026!"}'
+```
+
+Pass the returned access token as `Authorization: Bearer <token>`. RFQ list parameters are `page`, `page_size`, and optional `status` (`UPCOMING`, `ACTIVE`, `CLOSED`, or `FORCE_CLOSED`).
+
+Quote submission requires a supplier token and a new UUID idempotency key:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/rfqs/<rfq-id>/bids \
+  -H 'Authorization: Bearer <supplier-token>' \
+  -H 'Idempotency-Key: 35b5ca37-f11c-4bf7-a4a0-51fd62cd754b' \
+  -H 'Content-Type: application/json' \
+  -d '{"carrier_name":"Supplier A Logistics","freight_minor":"700000","origin_minor":"150000","destination_minor":"100000","transit_time_hours":24,"quote_valid_until":"2030-01-05"}'
+```
+
+Money and bid IDs are decimal strings in JSON. Replaying the same key with the same canonical quote returns the original bid without another insert or event; reusing it with a changed quote returns `IDEMPOTENCY_KEY_REUSED`. Bid history defaults to price order and accepts `sort=newest`.
 
 ## Core design constraints
 

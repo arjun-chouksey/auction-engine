@@ -9,6 +9,7 @@ import (
 type Config struct {
 	Port        string
 	DatabaseURL string
+	JWTSecret   string
 }
 
 func Load() (Config, error) {
@@ -23,5 +24,9 @@ func Load() (Config, error) {
 	if databaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
-	return Config{Port: port, DatabaseURL: databaseURL}, nil
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if len(jwtSecret) < 32 {
+		return Config{}, fmt.Errorf("JWT_SECRET must contain at least 32 characters")
+	}
+	return Config{Port: port, DatabaseURL: databaseURL, JWTSecret: jwtSecret}, nil
 }
