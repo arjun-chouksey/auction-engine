@@ -1,0 +1,27 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Internal planning and agent workflow (not part of the submission)
+AGENTS.md
+assignment/
+prompts/
+docs/*
+!docs/02_ARCHITECTURE.md
+!docs/03_DATABASE_SCHEMA.md
+
+# Go
+backend/bin/
+backend/coverage.out
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
