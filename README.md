@@ -17,7 +17,6 @@ The submission design documents are:
 
 - [High-level and low-level architecture](docs/02_ARCHITECTURE.md)
 - [Database schema design](docs/03_DATABASE_SCHEMA.md)
-- [Observed verification results](TEST_RESULTS.md)
 
 ## Repository structure
 
@@ -40,9 +39,6 @@ frontend/
   src/styles.css          Responsive application design system
 compose.yaml              PostgreSQL, API, UI, and migration tooling
 Makefile                  Formatting, test, build, and local commands
-DESIGN.md                 Durable visual design decisions
-UX-CONTRACT.md            Frontend behavior and interaction contract
-TEST_RESULTS.md           Observed test-matrix evidence and boundaries
 ```
 
 ## Local development
@@ -191,7 +187,7 @@ The event endpoint returns immutable activity newest first. The stream endpoint 
 7. For deterministic extension evidence, run `make backend-integration-test`; the suite covers all trigger modes, repeated extension, forced-cap clipping, exact close boundaries, audit events, idempotent replay, and concurrent bids without waiting for real-time demo boundaries.
 8. Return to the browser and verify current close, explicit timezone labels, activity history, periodic/live refresh behavior, and closed-auction quote disabling. Refreshing requires signing in again because the MVP intentionally keeps bearer tokens only in memory; canonical RFQ, bids, and events remain persisted.
 
-The architecture diagrams are in [docs/02_ARCHITECTURE.md](docs/02_ARCHITECTURE.md), the implemented schema and concurrency notes are in [docs/03_DATABASE_SCHEMA.md](docs/03_DATABASE_SCHEMA.md), and exact observed verification evidence is in [TEST_RESULTS.md](TEST_RESULTS.md).
+The architecture diagrams are in [docs/02_ARCHITECTURE.md](docs/02_ARCHITECTURE.md), and the implemented schema and concurrency notes are in [docs/03_DATABASE_SCHEMA.md](docs/03_DATABASE_SCHEMA.md).
 
 ## Core design constraints
 
