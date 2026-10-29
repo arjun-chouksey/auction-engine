@@ -32,10 +32,17 @@ backend/
   internal/service/       Application validation and authorization
   migrations/             Versioned SQL migration location
 frontend/
-  src/app/                React router shell and pages
-  src/                    Entry point, tests, and styles
+  src/app/                Router, route protection, and application tests
+  src/auth/               In-memory authenticated session context
+  src/components/         Shared shell, state, and pagination components
+  src/lib/                API, exact-money, date, and SSE utilities
+  src/pages/              Login, list, create, and auction detail screens
+  src/styles.css          Responsive application design system
 compose.yaml              PostgreSQL, API, UI, and migration tooling
 Makefile                  Formatting, test, build, and local commands
+DESIGN.md                 Durable visual design decisions
+UX-CONTRACT.md            Frontend behavior and interaction contract
+TEST_RESULTS.md           Observed test-matrix evidence and boundaries
 ```
 
 ## Local development
@@ -172,6 +179,19 @@ curl -sS -X POST http://localhost:8080/api/v1/rfqs/<rfq-id>/bids \
 Money and bid IDs are decimal strings in JSON. Replaying the same key with the same canonical quote returns the original bid without another insert or event; reusing it with a changed quote returns `IDEMPOTENCY_KEY_REUSED`. Bid history defaults to price order and accepts `sort=newest`.
 
 The event endpoint returns immutable activity newest first. The stream endpoint uses fetch-based SSE with the same bearer header and emits best-effort `rfq_changed` signals; clients must refetch canonical RFQ, ranking, bid, and event data after signals or reconnects.
+
+## Reviewer demo
+
+1. Start the stack, apply migrations, and seed accounts using the commands under **Local development** and **Schema and demo accounts**.
+2. Open <http://localhost:5173> and sign in as `buyer@example.test` using the clearly labeled local demo password.
+3. Create an RFQ with a start a few minutes ahead, an initial close after the start, a later forced close, and one of the three explained trigger policies.
+4. Open the RFQ and verify its timing, trigger configuration, empty ranking, and `RFQ_CREATED` activity entry.
+5. Sign out and use suppliers A, B, and C in turn. Once the RFQ is active, submit quotes with distinct totals. Improve one supplier's own quote without necessarily taking L1.
+6. Verify the ranking shows one latest quote per supplier while **All supplier bids** retains every accepted submission in price order.
+7. For deterministic extension evidence, run `make backend-integration-test`; the suite covers all trigger modes, repeated extension, forced-cap clipping, exact close boundaries, audit events, idempotent replay, and concurrent bids without waiting for real-time demo boundaries.
+8. Return to the browser and verify current close, explicit timezone labels, activity history, periodic/live refresh behavior, and closed-auction quote disabling. Refreshing requires signing in again because the MVP intentionally keeps bearer tokens only in memory; canonical RFQ, bids, and events remain persisted.
+
+The architecture diagrams are in [docs/02_ARCHITECTURE.md](docs/02_ARCHITECTURE.md), the implemented schema and concurrency notes are in [docs/03_DATABASE_SCHEMA.md](docs/03_DATABASE_SCHEMA.md), and exact observed verification evidence is in [TEST_RESULTS.md](TEST_RESULTS.md).
 
 ## Core design constraints
 
